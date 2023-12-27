@@ -7,6 +7,20 @@ const cellRef = computed(() => {
 })
 const evaluation = ref(0)
 
+const pieceImages = {
+  'WP': new URL('./assets/pieceWP.png', import.meta.url),
+  'WN': new URL('./assets/pieceWN.png', import.meta.url),
+  'WB': new URL('./assets/pieceWB.png', import.meta.url),
+  'WR': new URL('./assets/pieceWR.png', import.meta.url),
+  'WQ': new URL('./assets/pieceWQ.png', import.meta.url),
+  'WK': new URL('./assets/pieceWK.png', import.meta.url),
+  'BP': new URL('./assets/pieceBP.png', import.meta.url),
+  'BN': new URL('./assets/pieceBN.png', import.meta.url),
+  'BB': new URL('./assets/pieceBB.png', import.meta.url),
+  'BR': new URL('./assets/pieceBR.png', import.meta.url),
+  'BQ': new URL('./assets/pieceBQ.png', import.meta.url),
+  'BK': new URL('./assets/pieceBK.png', import.meta.url),
+}
 const board = {
   cells: Array.from(Array(8), () => Array(8).fill('')),
   playerToMove: 'W',
@@ -245,8 +259,8 @@ function resetSquareClassRef() {
   }
 }
 
-function clickCell(event) {
-  let index = parseInt(event.target.id)
+function clickCell(event, cellNum) {
+  let index = cellNum
   let x = index % 8
   let y = Math.floor(index/8)
   if (squareClassRef.value[x][y] == 'HighlightSquare') {
@@ -283,7 +297,7 @@ onMounted(() => {
 
 <template>
   <div class='Board'>
-    <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' :id='index-1' @click='clickCell'>{{ cellRef[(index-1)%8][Math.floor((index-1)/8)] }}</div>
+    <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' :id='index-1' @click='(e) => clickCell(e, index-1)'><img :src='pieceImages[board.cells[(index-1)%8][Math.floor((index-1)/8)]]'></div>
   </div>
   <p>{{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ evaluation }}</p>
 </template>
