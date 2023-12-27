@@ -7,6 +7,8 @@ const cellRef = computed(() => {
 })
 const evaluation = ref(0)
 const message = ref('')
+const whiteAI = ref(true)
+const blackAI = ref(true)
 
 const pieceImages = {
   'WP': new URL('./assets/pieceWP.png', import.meta.url),
@@ -420,8 +422,81 @@ function getOppositeColor(color) {
   return (color == 'W') ? 'B' : 'W'
 }
 
+function findBestMove(boardState, depth) {
+  boardState.moves.sort(() => (Math.random()-0.5))
+  let bestMove = board.moves[0]
+  if (boardState.playerToMove == 'W') {
+    let bestEval = -1000
+    for (let newMove of boardState.moves) {
+      const potentialBoardState = structuredClone(board)
+      makeMove(potentialBoardState, newMove)
+      updateMoves(potentialBoardState)
+      let newEval = deepEvaluate(potentialBoardState, depth)
+      if (newEval > bestEval) {
+        bestEval = newEval
+        bestMove = newMove
+      }
+    }
+    evaluation.value = bestEval
+  }
+  if (boardState.playerToMove == 'B') {
+    let bestEval = 1000
+    for (let newMove of boardState.moves) {
+      const potentialBoardState = structuredClone(boardState)
+      makeMove(potentialBoardState, newMove)
+      updateMoves(potentialBoardState)
+      let newEval = deepEvaluate(potentialBoardState, depth)
+      if (newEval < bestEval) {
+        bestEval = newEval
+        bestMove = newMove
+      }
+    }
+    evaluation.value = bestEval
+  }
+  return bestMove
+}
+
+function deepEvaluate(boardState, depth) {
+  if (depth == 0 || !boardState.moves.length) {
+    return evaluate(boardState)
+  }
+  if (boardState.playerToMove == 'W') {
+    let bestEval = -1000
+    for (let move of boardState.moves) {
+      const potentialBoardState = structuredClone(boardState)
+      makeMove(potentialBoardState, move)
+      updateMoves(potentialBoardState)
+      let newEval = deepEvaluate(potentialBoardState, depth-1)
+      if (newEval > bestEval) {
+        bestEval = newEval
+      }
+    }
+    return bestEval
+  }
+  if (boardState.playerToMove == 'B') {
+    let bestEval = 1000
+    for (let move of boardState.moves) {
+      const potentialBoardState = structuredClone(boardState)
+      makeMove(potentialBoardState, move)
+      updateMoves(potentialBoardState)
+      let newEval = deepEvaluate(potentialBoardState, depth-1)
+      if (newEval < bestEval) {
+        bestEval = newEval
+      }
+    }
+    return bestEval
+  }
+}
+
 function evaluate(boardState) {
-  const values = {'P':100, 'N':300, 'B':300, 'R':500, 'Q':900, 'K':20000}
+  if (!boardState.moves.length) {
+    if (boardState.playerToMove == 'W' && isKingInCheck(boardState, 'W'))
+      return -100
+    if (boardState.playerToMove == 'B' && isKingInCheck(boardState, 'B'))
+      return 100
+    return 0
+  }
+  const values = {'P':1, 'N':3, 'B':3, 'R':5, 'Q':9, 'K':200}
   let evaluation = 0
   for (let y=0;y<8;y++) {
     for (let x=0;x<8;x++) {
@@ -433,7 +508,7 @@ function evaluate(boardState) {
       }
     }
   }
-  return evaluation / 100
+  return evaluation
 }
 
 function resetSquareClassRef() {
@@ -456,51 +531,13 @@ function clickCell(event, cellNum) {
     resetSquareClassRef()
     return
   }
-
-  if (squareClassRef.value[x][y] == 'ThreatSquare') { //Valid move clicked on
-
-    //Make player's move and update highlighting
+  
+  //Make move if valid move clicked, else update highlighting
+  if (squareClassRef.value[x][y] == 'ThreatSquare') {
     const move = {xFrom:pieceHighlight[0], yFrom:pieceHighlight[1], xTo:x, yTo:y}
-    pieceHighlight = null
+    makeRealMove(move)
+  } else {
     resetSquareClassRef()
-    squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
-    squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
-    makeMove(board, move)
-    updateMoves(board)
-
-    //Let computer make next move
-    if (board.playerToMove == 'B') {
-      if (board.moves.length) {
-        const move = board.moves[Math.floor(Math.random() * board.moves.length)]
-        makeMove(board, move)
-        updateMoves(board)
-        if (!board.moves.length) {
-          if (isKingInCheck(board, 'W')) {
-          message.value = 'Checkmate! Black wins!'
-          } else {
-            message.value = 'Stalemate! Game ends in a draw.'
-          }
-        }
-        resetSquareClassRef()
-        squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
-        squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
-      } else {
-        if (isKingInCheck(board, 'B')) {
-          message.value = 'Checkmate! White wins!'
-        } else {
-          message.value = 'Stalemate! Game ends in a draw.'
-        }
-      }
-    }
-
-    //Update evaluation
-    evaluation.value = evaluate(board)
-
-  } else { //Valid move not clicked on
-
-    resetSquareClassRef()
-    
-    //Show valid moves of clicked piece
     let piece = board.cells[x][y]
     if (piece[0] == board.playerToMove) {
       squareClassRef.value[x][y] = 'HighlightSquare'
@@ -510,13 +547,47 @@ function clickCell(event, cellNum) {
         squareClassRef.value[move[0]][move[1]] = 'ThreatSquare'
       }
     }
-
   }
+}
+
+function makeRealMove(move) {
+
+  //Apply move to board
+  makeMove(board, move)
+  updateMoves(board)
+  resetSquareClassRef()
+  pieceHighlight = null
+  squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
+  squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
+
+  //Check for game end conditions
+  if (!board.moves.length) {
+    if (isKingInCheck(board, board.playerToMove)) {
+    message.value = 'Checkmate! '+((board.playerToMove == 'W') ? 'Black' : 'White')+' wins!'
+    } else {
+      message.value = 'Stalemate! Game ends in a draw.'
+    }
+    return
+  }
+
+  //Let AI take turn
+  if ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value)) {
+    makeAIMove()
+  }
+}
+
+async function makeAIMove() {
+  const bestMove = findBestMove(board, 2)
+  await new Promise((r) => setTimeout(r, 10));
+  makeRealMove(bestMove)
 }
 
 onMounted(() => {
   resetBoardState()
   resetSquareClassRef()
+  if (whiteAI.value) {
+    makeAIMove()
+  }
 })
 
 </script>
