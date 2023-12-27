@@ -6,6 +6,7 @@ const cellRef = computed(() => {
   return board.cells
 })
 const evaluation = ref(0)
+const message = ref('')
 
 const pieceImages = {
   'WP': new URL('./assets/pieceWP.png', import.meta.url),
@@ -23,6 +24,7 @@ const pieceImages = {
 }
 const board = {
   cells: Array.from(Array(8), () => Array(8).fill('')),
+  moves: [],
   playerToMove: 'W',
   movesSinceProgress: 0,
   enPassantVulnerability: null,
@@ -31,7 +33,7 @@ const board = {
   castlePrivelegeBK: true,
   castlePrivelegeBQ: true,
 }
-let pieceHighlight = []
+let pieceHighlight = null
 
 function resetBoardState() {
   for (let y=0;y<8;y++) {
@@ -57,14 +59,19 @@ function resetBoardState() {
       board.cells[x][y] = piece
     }
   }
+  updateMoves(board)
 }
 
-function getMoves(boardState, verify) {
+function updateMoves(boardState) {
+  boardState.moves = getMoves(boardState)
+}
+
+function getMoves(boardState) {
   const moves = []
   for (let y=0;y<8;y++) {
     for (let x=0;x<8;x++) {
       if (boardState.cells[x][y][0] == boardState.playerToMove) {
-        for (let halfMove of getHalfMovesFromPiece(boardState, x, y, verify)) {
+        for (let halfMove of getHalfMovesFromPiece(boardState, x, y)) {
           moves.push({xFrom:x, yFrom:y, xTo:halfMove[0], yTo:halfMove[1]})
         }
       }
@@ -73,7 +80,7 @@ function getMoves(boardState, verify) {
   return moves
 }
 
-function getHalfMovesFromPiece(boardState, x, y, verify) {
+function getHalfMovesFromPiece(boardState, x, y) {
   const moves = []
   let piece = boardState.cells[x][y]
   let color = piece[0]
@@ -229,7 +236,7 @@ function getHalfMovesFromPiece(boardState, x, y, verify) {
       }
     }
     if (color == 'B') {
-      if (boardState.castlePrivelegeWK && !isKingInCheck(boardState, 'B')) {
+      if (boardState.castlePrivelegeBK && !isKingInCheck(boardState, 'B')) {
         if (!boardState.cells[5][0] && !boardState.cells[6][0]) {
           const intermediateBoardState = structuredClone(boardState)
           intermediateBoardState.cells[4][0] = ''
@@ -239,7 +246,7 @@ function getHalfMovesFromPiece(boardState, x, y, verify) {
           }
         }
       }
-      if (boardState.castlePrivelegeWQ && !isKingInCheck(boardState, 'B')) {
+      if (boardState.castlePrivelegeBQ && !isKingInCheck(boardState, 'B')) {
         if (!boardState.cells[1][0] && !boardState.cells[2][0] && !boardState.cells[3][0]) {
           const intermediateBoardState = structuredClone(boardState)
           intermediateBoardState.cells[4][0] = ''
@@ -251,9 +258,6 @@ function getHalfMovesFromPiece(boardState, x, y, verify) {
       }
     }
   }
-
-  if (!verify)
-    return moves
   
   const verifiedHalfMoves = []
   for (let halfMove of moves) {
@@ -371,7 +375,7 @@ function makeMove(boardState, move) {
     boardState.cells[move.xTo][3] = ''
   }
   if (boardState.cells[move.xFrom][move.yFrom] == 'BP' && !boardState.cells[move.xTo][move.yTo] && move.xFrom != move.xTo) {
-    boardState.cells[move.xTo][5] = ''
+    boardState.cells[move.xTo][4] = ''
   }
   //Resolve castling moves
   if (boardState.cells[move.xFrom][move.yFrom] == 'WK') {
@@ -401,6 +405,13 @@ function makeMove(boardState, move) {
   //Move the piece
   boardState.cells[move.xTo][move.yTo] = boardState.cells[move.xFrom][move.yFrom]
   boardState.cells[move.xFrom][move.yFrom] = ''
+  //Resolve pawn promotions
+  if (move.yTo == 0 && boardState.cells[move.xTo][move.yTo] == 'WP') {
+    boardState.cells[move.xTo][move.yTo] = 'WQ'
+  }
+  if (move.yTo == 7 && boardState.cells[move.xTo][move.yTo] == 'BP') {
+    boardState.cells[move.xTo][move.yTo] = 'BQ'
+  }
   //Change who moves next
   boardState.playerToMove = getOppositeColor(boardState.playerToMove)
 }
@@ -434,30 +445,72 @@ function resetSquareClassRef() {
 }
 
 function clickCell(event, cellNum) {
+
+  //Get grid coords of clicked cell
   let x = cellNum% 8
   let y = Math.floor(cellNum/8)
-  if (squareClassRef.value[x][y] == 'HighlightSquare') {
+  
+  //Remove highlight if a piece is clicked a second time
+  if (pieceHighlight && x == pieceHighlight[0] && y == pieceHighlight[1]) {
+    pieceHighlight = null
     resetSquareClassRef()
     return
   }
-  if (squareClassRef.value[x][y] == 'ThreatSquare') {
-    resetSquareClassRef()
+
+  if (squareClassRef.value[x][y] == 'ThreatSquare') { //Valid move clicked on
+
+    //Make player's move and update highlighting
     const move = {xFrom:pieceHighlight[0], yFrom:pieceHighlight[1], xTo:x, yTo:y}
-    makeMove(board, move)
+    pieceHighlight = null
+    resetSquareClassRef()
     squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
     squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
-    evaluation.value = evaluate(board)
-    return
-  }
-  resetSquareClassRef()
-  let piece = board.cells[x][y]
-  if (piece[0] == board.playerToMove) {
-    squareClassRef.value[x][y] = 'HighlightSquare'
-    pieceHighlight = [x, y]
-    const moves = getHalfMovesFromPiece(board, x, y, true)
-    for (let move of moves) {
-      squareClassRef.value[move[0]][move[1]] = 'ThreatSquare'
+    makeMove(board, move)
+    updateMoves(board)
+
+    //Let computer make next move
+    if (board.playerToMove == 'B') {
+      if (board.moves.length) {
+        const move = board.moves[Math.floor(Math.random() * board.moves.length)]
+        makeMove(board, move)
+        updateMoves(board)
+        if (!board.moves.length) {
+          if (isKingInCheck(board, 'W')) {
+          message.value = 'Checkmate! Black wins!'
+          } else {
+            message.value = 'Stalemate! Game ends in a draw.'
+          }
+        }
+        resetSquareClassRef()
+        squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
+        squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
+      } else {
+        if (isKingInCheck(board, 'B')) {
+          message.value = 'Checkmate! White wins!'
+        } else {
+          message.value = 'Stalemate! Game ends in a draw.'
+        }
+      }
     }
+
+    //Update evaluation
+    evaluation.value = evaluate(board)
+
+  } else { //Valid move not clicked on
+
+    resetSquareClassRef()
+    
+    //Show valid moves of clicked piece
+    let piece = board.cells[x][y]
+    if (piece[0] == board.playerToMove) {
+      squareClassRef.value[x][y] = 'HighlightSquare'
+      pieceHighlight = [x, y]
+      const moves = getHalfMovesFromPiece(board, x, y)
+      for (let move of moves) {
+        squareClassRef.value[move[0]][move[1]] = 'ThreatSquare'
+      }
+    }
+
   }
 }
 
@@ -469,10 +522,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class='Board'>
-    <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click='(e) => clickCell(e, index-1)'><img :src='pieceImages[board.cells[(index-1)%8][Math.floor((index-1)/8)]]'></div>
+  <div class='Board' @click='resetSquareClassRef'>
+    <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click.stop='(e) => clickCell(e, index-1)'><img :src='pieceImages[board.cells[(index-1)%8][Math.floor((index-1)/8)]]'></div>
   </div>
-  <p>{{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ evaluation }}</p>
+  <p>
+    {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ evaluation }}<br>
+    {{ message }}
+  </p>
 </template>
 
 <style>
