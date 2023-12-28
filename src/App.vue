@@ -7,7 +7,7 @@ const cellRef = computed(() => {
 })
 const evaluation = ref(0)
 const message = ref('')
-const whiteAI = ref(true)
+const whiteAI = ref(false)
 const blackAI = ref(true)
 
 const pieceImages = {
@@ -23,6 +23,74 @@ const pieceImages = {
   'BR': new URL('./assets/pieceBR.png', import.meta.url),
   'BQ': new URL('./assets/pieceBQ.png', import.meta.url),
   'BK': new URL('./assets/pieceBK.png', import.meta.url),
+}
+const pawnTable = [
+  [0, 50, 10, 5, 0, 5, 5, 0],
+  [0, 50, 10, 5, 0, -5, 10, 0],
+  [0, 50, 20, 10, 0, -10, 10, 0],
+  [0, 50, 30, 25, 20, 0, -20, 0],
+  [0, 50, 30, 25, 20, 0, -20, 0],
+  [0, 50, 20, 10, 0, -10, 10, 0],
+  [0, 50, 10, 5, 0, -5, 10, 0],
+  [0, 50, 10, 5, 0, 5, 5, 0],
+]
+const knightTable = [
+  [-50, -40, -30, -30, -30, -30, -40, -50],
+  [-40, -20, 0, 5, 0, 5, -20, -40],
+  [-30, 0, 10, 15, 15, 10, 0, -30],
+  [-30, 0, 15, 20, 20, 15, 5, -30],
+  [-30, 0, 15, 20, 20, 15, 5, -30],
+  [-30, 0, 10, 15, 15, 10, 0, -30],
+  [-40, -20, 0, 5, 0, 5, -20, -40],
+  [-50, -40, -30, -30, -30, -30, -40, -50],
+]
+const bishopTable = [
+  [-20, -10, -10, -10, -10, -10, -10, -20],
+  [-10, 0, 0, 5, 0, 10, 5, -10],
+  [-10, 0, 5, 5, 10, 10, 0, -10],
+  [-10, 0, 10, 10, 10, 10, 0, -10],
+  [-10, 0, 10, 10, 10, 10, 0, -10],
+  [-10, 0, 5, 5, 10, 10, 0, -10],
+  [-10, 0, 0, 5, 0, 10, 5, -10],
+  [-20, -10, -10, -10, -10, -10, -10, -20],
+]
+const rookTable = [
+  [0, 5, -5, -5, -5, -5, -5, 0],
+  [0, 10, 0, 0, 0, 0, 0, 0],
+  [0, 10, 0, 0, 0, 0, 0, 0],
+  [0, 10, 0, 0, 0, 0, 0, 5],
+  [0, 10, 0, 0, 0, 0, 0, 5],
+  [0, 10, 0, 0, 0, 0, 0, 0],
+  [0, 10, 0, 0, 0, 0, 0, 0],
+  [0, 5, -5, -5, -5, -5, -5, 0],
+]
+const queenTable = [
+  [-20, -10, -10, -5, 0, -10, -10, -20],
+  [-10, 0, 0, 0, 0, 5, 0, -10],
+  [-10, 0, 5, 5, 5, 5, 5, -10],
+  [-5, 0, 5, 5, 5, 5, 0, -5],
+  [-5, 0, 5, 5, 5, 5, 0, -5],
+  [-10, 0, 5, 5, 5, 5, 0, -10],
+  [-10, 0, 0, 0, 0, 0, 0, -10],
+  [-20, -10, -10, -5, -5, -10, -10, -20],
+]
+const kingTable = [
+  [-30, -30, -30, -30, -20, -10, 20, 20],
+  [-40, -40, -40, -40, -30, -20, 20, 30],
+  [-40, -40, -40, -40, -30, -20, 0, 10],
+  [-50, -50, -50, -50, -40, -20, 0, 0],
+  [-50, -50, -50, -50, -40, -20, 0, 0],
+  [-40, -40, -40, -40, -30, -20, 0, 10],
+  [-40, -40, -40, -40, -30, -20, 20, 30],
+  [-30, -30, -30, -30, -20, -10, 20, 20],
+]
+const pieceTables = {
+  'P':pawnTable,
+  'N':knightTable,
+  'B':bishopTable,
+  'R':rookTable,
+  'Q':queenTable,
+  'K':kingTable
 }
 const board = {
   cells: Array.from(Array(8), () => Array(8).fill('')),
@@ -70,6 +138,8 @@ function updateMoves(boardState) {
 
 function getMoves(boardState) {
   const moves = []
+  if (boardState.movesSinceProgress >= 100)
+    return moves
   for (let y=0;y<8;y++) {
     for (let x=0;x<8;x++) {
       if (boardState.cells[x][y][0] == boardState.playerToMove) {
@@ -496,7 +566,7 @@ function evaluate(boardState) {
       return 100
     return 0
   }
-  const values = {'P':1, 'N':3, 'B':3, 'R':5, 'Q':9, 'K':200}
+  const values = {'P':100, 'N':320, 'B':330, 'R':500, 'Q':900, 'K':20000}
   let evaluation = 0
   for (let y=0;y<8;y++) {
     for (let x=0;x<8;x++) {
@@ -504,11 +574,16 @@ function evaluate(boardState) {
         let piece = boardState.cells[x][y]
         let color = piece[0]
         let type = piece[1]
-        evaluation += values[type] * ((color == 'W') ? 1 : -1)
+        if (color == 'W') {
+          evaluation += values[type] + pieceTables[type][x][y]
+        } else {
+          evaluation -= values[type] + pieceTables[type][x][7-y]
+        }
+        
       }
     }
   }
-  return evaluation
+  return evaluation / 100
 }
 
 function resetSquareClassRef() {
@@ -572,13 +647,16 @@ function makeRealMove(move) {
 
   //Let AI take turn
   if ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value)) {
-    makeAIMove()
+    setTimeout(makeAIMove, 25)
   }
 }
 
-async function makeAIMove() {
+function makeAIMove() {
+  let time1 = Date.now()
   const bestMove = findBestMove(board, 2)
-  await new Promise((r) => setTimeout(r, 10));
+  let time2 = Date.now()
+  let time = (time2 - time1) / 1000
+  console.log('Move search time: '+time+' seconds.')
   makeRealMove(bestMove)
 }
 
@@ -597,7 +675,7 @@ onMounted(() => {
     <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click.stop='(e) => clickCell(e, index-1)'><img :src='pieceImages[board.cells[(index-1)%8][Math.floor((index-1)/8)]]'></div>
   </div>
   <p>
-    {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ evaluation }}<br>
+    {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ (evaluation >= 0 ? '+' : '')+evaluation }}<br>
     {{ message }}
   </p>
 </template>
