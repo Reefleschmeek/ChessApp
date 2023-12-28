@@ -144,7 +144,7 @@ function getMoves(boardState) {
     for (let x=0;x<8;x++) {
       if (boardState.cells[x][y][0] == boardState.playerToMove) {
         for (let halfMove of getHalfMovesFromPiece(boardState, x, y)) {
-          moves.push({xFrom:x, yFrom:y, xTo:halfMove[0], yTo:halfMove[1]})
+          moves.push({xFrom:x, yFrom:y, xTo:halfMove.xTo, yTo:halfMove.yTo, flags:halfMove.flags})
         }
       }
     }
@@ -153,99 +153,127 @@ function getMoves(boardState) {
 }
 
 function getHalfMovesFromPiece(boardState, x, y) {
-  const moves = []
-  let piece = boardState.cells[x][y]
-  let color = piece[0]
-  let type = piece[1]
-  if (type == 'P') {
-    if (color == 'W') {
-      if (!boardState.cells[x][y-1]) {
-        moves.push([x, y-1])
-        if (y == 6 && !boardState.cells[x][4]) {
-          moves.push([x, 4])
+
+  //Flag dictionary:
+  //X_ = Capture of _ piece, DP = Double pawn move, EC = En passant capture, E_ = En passant vulnerability on file _ expired, P_ = Pawn promotion to _ piece,
+  //CK = King side castle, CQ = Queen side castle, LK = Lose king side castle privelege, LQ = Lose queen side castle privelege
+  //Some are applied when verifying the moves
+
+  const halfMoves = []
+  let color = boardState.cells[x][y][0]
+  let type = boardState.cells[x][y][1]
+
+  if (type == 'P') { //Pawn moves
+    if (color == 'W') { //White pawns
+      if (!boardState.cells[x][y-1]) { //Single move
+        const flags = []
+        if (y == 1)
+          flags.push('PQ')
+        halfMoves.push({xTo:x, yTo:y-1, flags:flags})
+        if (y == 6 && !boardState.cells[x][4]) { //Double move
+          halfMoves.push({xTo:x, yTo:4, flags:['DP']})
         }
       }
-      if (x > 0 && boardState.cells[x-1][y-1][0] == 'B') {
-        moves.push([x-1, y-1])
+      if (x > 0 && boardState.cells[x-1][y-1][0] == 'B') { //Capture left
+        const flags = []
+        if (y == 1)
+          flags.push('PQ')
+        halfMoves.push({xTo:x-1, yTo:y-1, flags:flags})
       }
-      if (x < 7 && boardState.cells[x+1][y-1][0] == 'B') {
-        moves.push([x+1, y-1])
+      if (x < 7 && boardState.cells[x+1][y-1][0] == 'B') { //Capture right
+        const flags = []
+        if (y == 1)
+          flags.push('PQ')
+        halfMoves.push({xTo:x+1, yTo:y-1, flags:flags})
       }
-      if (boardState.enPassantVulnerability !== null) {
+      if (boardState.enPassantVulnerability !== null) { //Capture en passant
         if (y == 3 && (x == boardState.enPassantVulnerability-1 || x == boardState.enPassantVulnerability+1)){
-          moves.push([boardState.enPassantVulnerability, 2])
+          halfMoves.push({xTo:boardState.enPassantVulnerability, yTo:2, flags:['EX']})
         }
       }
-    }
-    if (color == 'B') {
-      if (!boardState.cells[x][y+1]) {
-        moves.push([x, y+1])
-        if (y == 1 && !boardState.cells[x][3]) {
-          moves.push([x, 3])
+    } else { //Black pawns
+      if (!boardState.cells[x][y+1]) { //Single move
+        const flags = []
+        if (y==6)
+          flags.push('PQ')
+        halfMoves.push({xTo:x, yTo:y+1, flags:flags})
+        if (y == 1 && !boardState.cells[x][3]) { //Double move
+          halfMoves.push({xTo:x, yTo:3, flags:['DP']})
         }
       }
-      if (x > 0 && boardState.cells[x-1][y+1][0] == 'W') {
-        moves.push([x-1, y+1])
+      if (x > 0 && boardState.cells[x-1][y+1][0] == 'W') { //Capture left
+        halfMoves.push({xTo:x-1, yTo:y+1, flags:[]})
       }
-      if (x < 7 && boardState.cells[x+1][y+1][0] == 'W') {
-        moves.push([x+1, y+1])
+      if (x < 7 && boardState.cells[x+1][y+1][0] == 'W') { //Capture right
+        halfMoves.push({xTo:x+1, yTo:y+1, flags:[]})
       }
-      if (boardState.enPassantVulnerability != null) {
+      if (boardState.enPassantVulnerability != null) { //Capture en passant
         if (y == 4 && (x == boardState.enPassantVulnerability-1 || x == boardState.enPassantVulnerability+1)){
-          moves.push([boardState.enPassantVulnerability, 5])
+          halfMoves.push({xTo:boardState.enPassantVulnerability, yTo:5, flags:['EX']})
         }
       }
     }
   }
 
-  if (type == 'R' || type == 'Q') {
+  if (type == 'R' || type == 'Q') { //Rook+Queen moves
+    const flags = []
+    if (type == 'R') { //Castle privelege flags for moving rook
+      if (boardState.castlePrivelegeWK && x == 7 && color == 'W')
+        flags.push('LK')
+      if (boardState.castlePrivelegeWQ && x == 0 && color == 'W')
+        flags.push('LQ')
+      if (boardState.castlePrivelegeBK && x == 7 && color == 'B')
+        flags.push('LK')
+      if (boardState.castlePrivelegeBQ && x == 0 && color == 'B')
+        flags.push('LQ')
+    }
     if (x > 0) {
       for (let i=x-1;i>=0;i--) {
         if (boardState.cells[i][y]) {
           if (boardState.cells[i][y][0] != color) {
-            moves.push([i, y])
+            halfMoves.push({xTo:i, yTo:y, flags:flags})
           }
           break
         }
-        moves.push([i, y])
+        halfMoves.push({xTo:i, yTo:y, flags:flags})
       }
     }
     if (x < 7) {
       for (let i=x+1;i<=7;i++) {
         if (boardState.cells[i][y]) {
           if (boardState.cells[i][y][0] != color) {
-            moves.push([i, y])
+            halfMoves.push({xTo:i, yTo:y, flags:flags})
           }
           break
         }
-        moves.push([i, y])
+        halfMoves.push({xTo:i, yTo:y, flags:flags})
       }
     }
     if (y > 0) {
       for (let i=y-1;i>=0;i--) {
         if (boardState.cells[x][i]) {
           if (boardState.cells[x][i][0] != color) {
-            moves.push([x, i])
+            halfMoves.push({xTo:x, yTo:i, flags:flags})
           }
           break
         }
-        moves.push([x, i])
+        halfMoves.push({xTo:x, yTo:i, flags:flags})
       }
     }
     if (y < 7) {
       for (let i=y+1;i<=7;i++) {
         if (boardState.cells[x][i]) {
           if (boardState.cells[x][i][0] != color) {
-            moves.push([x, i])
+            halfMoves.push({xTo:x, yTo:i, flags:flags})
           }
           break
         }
-        moves.push([x, i])
+        halfMoves.push({xTo:x, yTo:i, flags:flags})
       }
     }
   }
 
-  if (type == 'B' || type == 'Q') {
+  if (type == 'B' || type == 'Q') { //Bishop+Queen moves
     for (let xIncrement of [-1, 1]) {
       for (let yIncrement of [-1, 1]) {
         let i = x + xIncrement
@@ -253,11 +281,11 @@ function getHalfMovesFromPiece(boardState, x, y) {
         while (i >= 0 && i <= 7 && j >= 0 && j <= 7) {
           if (boardState.cells[i][j]) {
             if (boardState.cells[i][j][0] != color) {
-              moves.push([i, j])
+              halfMoves.push({xTo:i, yTo:j, flags:[]})
             }
             break
           }
-          moves.push([i, j])
+          halfMoves.push({xTo:i, yTo:j, flags:[]})
           i += xIncrement
           j += yIncrement
         }
@@ -265,76 +293,90 @@ function getHalfMovesFromPiece(boardState, x, y) {
     }
   }
   
-  if (type == 'N') {
+  if (type == 'N') { //Knight moves
     const steps = [[2, 1], [2, -1], [1, 2], [1, -2], [-2, 1], [-2, -1], [-1, 2], [-1, -2]]
     for (let step of steps) {
       let i = x + step[0]
       let j = y + step[1]
       if (i >= 0 && i <= 7 && j >= 0 && j <= 7 && boardState.cells[i][j][0] != color) {
-        moves.push([i, j])
+        halfMoves.push({xTo:i, yTo:j, flags:[]})
       }
     }
   }
 
-  if (type == 'K') {
-    const steps = [[1, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1], [0, 1]]
-    for (let step of steps) {
-      let i = x + step[0]
-      let j = y + step[1]
-      if (i >= 0 && i <= 7 && j >= 0 && j <= 7 && boardState.cells[i][j][0] != color) {
-        moves.push([i, j])
-      }
-    }
-    if (color == 'W') {
-      if (boardState.castlePrivelegeWK && !isKingInCheck(boardState, 'W')) {
+  if (type == 'K') { //King moves
+    const flags = []
+    if (color == 'W') { //White king castling
+      if (boardState.castlePrivelegeWK)
+        flags.push('LK')
+      if (boardState.castlePrivelegeWQ)
+        flags.push('LQ')
+      if (boardState.castlePrivelegeWK && !isKingInCheck(boardState, 'W')) { //King side
         if (!boardState.cells[5][7] && !boardState.cells[6][7]) {
           const intermediateBoardState = structuredClone(boardState)
           intermediateBoardState.cells[4][7] = ''
           intermediateBoardState.cells[5][7] = 'WK'
           if (!isKingInCheck(intermediateBoardState, 'W')) {
-            moves.push([6, 7])
+            halfMoves.push({xTo:6, yTo:7, flags:flags.concat(['CK'])})
           }
         }
       }
-      if (boardState.castlePrivelegeWQ && !isKingInCheck(boardState, 'W')) {
+      if (boardState.castlePrivelegeWQ && !isKingInCheck(boardState, 'W')) { //Queen side
         if (!boardState.cells[1][7] && !boardState.cells[2][7] && !boardState.cells[3][7]) {
           const intermediateBoardState = structuredClone(boardState)
           intermediateBoardState.cells[4][7] = ''
           intermediateBoardState.cells[3][7] = 'WK'
           if (!isKingInCheck(intermediateBoardState, 'W')) {
-            moves.push([2, 7])
+            halfMoves.push({xTo:2, yTo:7, flags:flags.concat(['CQ'])})
           }
         }
       }
-    }
-    if (color == 'B') {
-      if (boardState.castlePrivelegeBK && !isKingInCheck(boardState, 'B')) {
+    } else { //Black king castling
+      if (boardState.castlePrivelegeBK)
+        flags.push('LK')
+      if (boardState.castlePrivelegeBQ)
+        flags.push('LQ')
+      if (boardState.castlePrivelegeBK && !isKingInCheck(boardState, 'B')) { //King side
         if (!boardState.cells[5][0] && !boardState.cells[6][0]) {
           const intermediateBoardState = structuredClone(boardState)
           intermediateBoardState.cells[4][0] = ''
           intermediateBoardState.cells[5][0] = 'BK'
           if (!isKingInCheck(intermediateBoardState, 'B')) {
-            moves.push([6, 0])
+            halfMoves.push({xTo:6, yTo:0, flags:flags.concat(['CK'])})
           }
         }
       }
-      if (boardState.castlePrivelegeBQ && !isKingInCheck(boardState, 'B')) {
+      if (boardState.castlePrivelegeBQ && !isKingInCheck(boardState, 'B')) { //Queen side
         if (!boardState.cells[1][0] && !boardState.cells[2][0] && !boardState.cells[3][0]) {
           const intermediateBoardState = structuredClone(boardState)
           intermediateBoardState.cells[4][0] = ''
           intermediateBoardState.cells[3][0] = 'BK'
           if (!isKingInCheck(intermediateBoardState, 'B')) {
-            moves.push([2, 0])
+            halfMoves.push({xTo:2, yTo:0, flags:flags.concat(['CQ'])})
           }
         }
       }
     }
+    //Regular moves
+    const steps = [[1, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1], [0, 1]]
+    for (let step of steps) {
+      let i = x + step[0]
+      let j = y + step[1]
+      if (i >= 0 && i <= 7 && j >= 0 && j <= 7 && boardState.cells[i][j][0] != color) {
+        halfMoves.push({xTo:i, yTo:j, flags:flags})
+      }
+    }
   }
   
+  //Verify potential moves, discarding those that place the moving player's king under threat
+  //Apply capture flags
   const verifiedHalfMoves = []
-  for (let halfMove of moves) {
+  for (let halfMove of halfMoves) {
+    if (boardState.cells[halfMove.xTo][halfMove.yTo]) {
+      halfMove.flags.push('X' + boardState.cells[halfMove.xTo][halfMove.yTo][1])
+    }
     const potentialBoardState = structuredClone(boardState)
-    const move = {xFrom:x, yFrom:y, xTo:halfMove[0], yTo:halfMove[1]}
+    const move = {xFrom:x, yFrom:y, xTo:halfMove.xTo, yTo:halfMove.yTo, flags:halfMove.flags}
     makeMove(potentialBoardState, move)
     if (!isKingInCheck(potentialBoardState, color)) {
       verifiedHalfMoves.push(halfMove)
@@ -609,7 +651,7 @@ function clickCell(event, cellNum) {
   
   //Make move if valid move clicked, else update highlighting
   if (squareClassRef.value[x][y] == 'ThreatSquare') {
-    const move = {xFrom:pieceHighlight[0], yFrom:pieceHighlight[1], xTo:x, yTo:y}
+    const move = {xFrom:pieceHighlight[0], yFrom:pieceHighlight[1], xTo:x, yTo:y, flags:[]}
     makeRealMove(move)
   } else {
     resetSquareClassRef()
@@ -619,7 +661,7 @@ function clickCell(event, cellNum) {
       pieceHighlight = [x, y]
       const moves = getHalfMovesFromPiece(board, x, y)
       for (let move of moves) {
-        squareClassRef.value[move[0]][move[1]] = 'ThreatSquare'
+        squareClassRef.value[move.xTo][move.yTo] = 'ThreatSquare'
       }
     }
   }
