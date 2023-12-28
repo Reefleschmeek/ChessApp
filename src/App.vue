@@ -543,7 +543,7 @@ function findBestMove(boardState, depth) {
       const potentialBoardState = structuredClone(board)
       makeMove(potentialBoardState, newMove)
       updateMoves(potentialBoardState)
-      let newEval = deepEvaluate(potentialBoardState, depth)
+      let newEval = deepEvaluate(potentialBoardState, depth-1)
       if (newEval > bestEval) {
         bestEval = newEval
         bestMove = newMove
@@ -557,7 +557,7 @@ function findBestMove(boardState, depth) {
       const potentialBoardState = structuredClone(boardState)
       makeMove(potentialBoardState, newMove)
       updateMoves(potentialBoardState)
-      let newEval = deepEvaluate(potentialBoardState, depth)
+      let newEval = deepEvaluate(potentialBoardState, depth-1)
       if (newEval < bestEval) {
         bestEval = newEval
         bestMove = newMove
