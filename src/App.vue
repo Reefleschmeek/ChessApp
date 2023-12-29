@@ -100,14 +100,14 @@ const board = {
   castleBKStack: [true],
   castleBQStack: [true],
   moves: [],
+  captures: [],
 }
 let pieceHighlight = null
 let highlightedMoves = {}
 let realMoves = []
 let evaluations = 0
-let alpha = -Infinity
-let beta = Infinity
-
+let searchDepth = 4
+let searchDepthNarrow = 4
 
 function last(arr) {
   return arr[arr.length - 1]
@@ -159,6 +159,24 @@ function updateMoves() {
     }
   }
   board.moves = moves
+}
+
+function updateCaptures() {
+  let captures = []
+  if (last(board.moveDrawStack) >= 100) {
+    board.captures = captures
+    return
+  }
+  for (let y=0;y<8;y++) {
+    for (let x=0;x<8;x++) {
+      if (board.cells[x][y][0] == board.playerToMove) {
+        for (let capture of getCapturesFromPiece(x, y)) {
+          captures.push(capture)
+        }
+      }
+    }
+  }
+  board.captures = captures
 }
 
 function getMovesFromPiece(x, y) {
@@ -340,17 +358,165 @@ function getMovesFromPiece(x, y) {
   //Apply capture flags
   const verifiedMoves = []
   for (let halfMove of halfMoves) {
-    let move = {xFrom:x, yFrom:y, ...halfMove}
     if (board.cells[halfMove.xTo][halfMove.yTo])
       halfMove.flags.push('X' + board.cells[halfMove.xTo][halfMove.yTo][1])
+    let move = {xFrom:x, yFrom:y, ...halfMove}
     makeMove(move)
     if (!isKingInCheck(color)) {
-      verifiedMoves.push({xFrom:x, yFrom:y, ...halfMove})
+      verifiedMoves.push(move)
     }
     unmakeMove(move)
   }
 
   return verifiedMoves
+}
+
+function getCapturesFromPiece(x, y) {
+  const halfMoves = []
+  let color = board.cells[x][y][0]
+  let type = board.cells[x][y][1]
+
+  if (type == 'P') { //Pawn moves
+    if (color == 'W') { //White pawns
+      if (x > 0 && board.cells[x-1][y-1][0] == 'B') { //Capture left
+        const flags = []
+        if (y == 1)
+          flags.push('PQ')
+        halfMoves.push({xTo:x-1, yTo:y-1, flags:flags})
+      }
+      if (x < 7 && board.cells[x+1][y-1][0] == 'B') { //Capture right
+        const flags = []
+        if (y == 1)
+          flags.push('PQ')
+        halfMoves.push({xTo:x+1, yTo:y-1, flags:flags})
+      }
+      if (last(board.enPassantStack) !== null) { //Capture en passant
+        let enPassantFile = last(board.enPassantStack)
+        if (y == 3 && (x == enPassantFile-1 || x == enPassantFile+1)){
+          halfMoves.push({xTo:enPassantFile, yTo:2, flags:['EP']})
+        }
+      }
+    } else { //Black pawns
+      if (x > 0 && board.cells[x-1][y+1][0] == 'W') { //Capture left
+        const flags = []
+        if (y==6)
+          flags.push('PQ')
+        halfMoves.push({xTo:x-1, yTo:y+1, flags:flags})
+      }
+      if (x < 7 && board.cells[x+1][y+1][0] == 'W') { //Capture right
+        const flags = []
+        if (y==6)
+          flags.push('PQ')
+        halfMoves.push({xTo:x+1, yTo:y+1, flags:flags})
+      }
+      if (last(board.enPassantStack) != null) { //Capture en passant
+        let enPassantFile = last(board.enPassantStack)
+        if (y == 4 && (x == enPassantFile-1 || x == enPassantFile+1)){
+          halfMoves.push({xTo:enPassantFile, yTo:5, flags:['EP']})
+        }
+      }
+    }
+  }
+
+  if (type == 'R' || type == 'Q') { //Rook+Queen moves
+    if (x > 0) {
+      for (let i=x-1;i>=0;i--) {
+        if (board.cells[i][y]) {
+          if (board.cells[i][y][0] != color) {
+            halfMoves.push({xTo:i, yTo:y, flags:[]})
+          }
+          break
+        }
+      }
+    }
+    if (x < 7) {
+      for (let i=x+1;i<=7;i++) {
+        if (board.cells[i][y]) {
+          if (board.cells[i][y][0] != color) {
+            halfMoves.push({xTo:i, yTo:y, flags:[]})
+          }
+          break
+        }
+      }
+    }
+    if (y > 0) {
+      for (let i=y-1;i>=0;i--) {
+        if (board.cells[x][i]) {
+          if (board.cells[x][i][0] != color) {
+            halfMoves.push({xTo:x, yTo:i, flags:[]})
+          }
+          break
+        }
+      }
+    }
+    if (y < 7) {
+      for (let i=y+1;i<=7;i++) {
+        if (board.cells[x][i]) {
+          if (board.cells[x][i][0] != color) {
+            halfMoves.push({xTo:x, yTo:i, flags:[]})
+          }
+          break
+        }
+      }
+    }
+  }
+
+  if (type == 'B' || type == 'Q') { //Bishop+Queen moves
+    for (let xIncrement of [-1, 1]) {
+      for (let yIncrement of [-1, 1]) {
+        let i = x + xIncrement
+        let j = y + yIncrement
+        while (i >= 0 && i <= 7 && j >= 0 && j <= 7) {
+          if (board.cells[i][j]) {
+            if (board.cells[i][j][0] != color) {
+              halfMoves.push({xTo:i, yTo:j, flags:[]})
+            }
+            break
+          }
+          i += xIncrement
+          j += yIncrement
+        }
+      }
+    }
+  }
+  
+  if (type == 'N') { //Knight moves
+    const steps = [[2, 1], [2, -1], [1, 2], [1, -2], [-2, 1], [-2, -1], [-1, 2], [-1, -2]]
+    for (let step of steps) {
+      let i = x + step[0]
+      let j = y + step[1]
+      if (i >= 0 && i <= 7 && j >= 0 && j <= 7 && board.cells[i][j] && board.cells[i][j][0] != color) {
+        halfMoves.push({xTo:i, yTo:j, flags:[]})
+      }
+    }
+  }
+
+  if (type == 'K') { //King moves
+    const steps = [[1, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1], [0, 1]]
+    for (let step of steps) {
+      let i = x + step[0]
+      let j = y + step[1]
+      if (i >= 0 && i <= 7 && j >= 0 && j <= 7 && board.cells[i][j] && board.cells[i][j][0] != color) {
+        halfMoves.push({xTo:i, yTo:j, flags:[]})
+      }
+    }
+  }
+  
+  //Verify potential moves, discarding those that place the moving player's king under threat
+  //Apply capture flags
+  const verifiedCaptures = []
+  for (let halfMove of halfMoves) {
+    if (!halfMove.flags.includes('EP'))
+      halfMove.flags.push('X' + board.cells[halfMove.xTo][halfMove.yTo][1])
+    let move = {xFrom:x, yFrom:y, ...halfMove}
+    makeMove(move)
+    if (!isKingInCheck(color)) {
+      verifiedCaptures.push(move)
+    }
+    unmakeMove(move)
+  }
+
+  return verifiedCaptures
 }
 
 function isKingInCheck(color) {
@@ -547,70 +713,100 @@ function unmakeMove(move) {
 }
 
 function findBestMove(depth) {
-  alpha = -Infinity
-  beta = Infinity
+  let alpha = -Infinity
+  let beta = Infinity
+  
   board.moves.sort(() => (Math.random()-0.5))
   let bestMove = board.moves[0]
 
   if (board.playerToMove == 'W') {
-    let bestEval = -9999
     for (let move of board.moves) {
       makeMove(move)
       updateMoves()
-      let newEval = deepEvaluate(depth-1)
-      if (newEval > bestEval) {
-        bestEval = newEval
+      let newEval = deepEvaluate(alpha, beta, depth-1)
+      unmakeMove(move)
+      if (newEval > alpha) {
+        alpha = newEval
         bestMove = move
       }
-      unmakeMove(move)
     }
-    evaluation.value = bestEval
+    evaluation.value = alpha
   } else {
-    let bestEval = 1000
     for (let move of board.moves) {
       makeMove(move)
       updateMoves()
-      let newEval = deepEvaluate(depth-1)
-      if (newEval < bestEval) {
-        bestEval = newEval
+      let newEval = deepEvaluate(alpha, beta, depth-1)
+      unmakeMove(move)
+      if (newEval < beta) {
+        beta = newEval
         bestMove = move
       }
-      unmakeMove(move)
     }
-    evaluation.value = bestEval
+    evaluation.value = beta
   }
   return bestMove
 }
 
-function deepEvaluate(depth) {
+function deepEvaluate(alpha, beta, depth) {
   if (depth == 0 || !board.moves.length) {
+    updateCaptures()
+    return narrowEvaluate(alpha, beta, searchDepthNarrow)
+  }
+  if (board.playerToMove == 'W') {
+    for (let move of board.moves) {
+      makeMove(move)
+      updateMoves()
+      let newEval = deepEvaluate(alpha, beta, depth-1)
+      unmakeMove(move)
+      if (newEval >= beta)
+        return beta
+      if (newEval > alpha)
+        alpha = newEval
+    }
+    return alpha
+  } else {
+    for (let move of board.moves) {
+      makeMove(move)
+      updateMoves()
+      let newEval = deepEvaluate(alpha, beta, depth-1)
+      unmakeMove(move)
+      if (newEval <= alpha)
+        return alpha
+      if (newEval < beta)
+        beta = newEval
+    }
+    return beta
+  }
+}
+
+function narrowEvaluate(alpha, beta, depth) {
+  if (depth == 0 || !board.captures.length) {
     return evaluate()
   }
   if (board.playerToMove == 'W') {
-    let bestEval = -1000
-    for (let move of board.moves) {
-      makeMove(move)
-      updateMoves()
-      let newEval = deepEvaluate(depth-1)
-      if (newEval > bestEval) {
-        bestEval = newEval
-      }
-      unmakeMove(move)
+    for (let capture of board.captures) {
+      makeMove(capture)
+      updateCaptures()
+      let newEval = narrowEvaluate(alpha, beta, depth-1)
+      unmakeMove(capture)
+      if (newEval >= beta)
+        return beta
+      if (newEval > alpha)
+        alpha = newEval
     }
-    return bestEval
-  }
-  if (board.playerToMove == 'B') {
-    let bestEval = 1000
-    for (let move of board.moves) {
-      makeMove(move)
-      updateMoves()
-      let newEval = deepEvaluate(depth-1)
-      if (newEval < bestEval) {
-        bestEval = newEval
-      }
-      unmakeMove(move)
+    return alpha
+  } else {
+    for (let capture of board.captures) {
+      makeMove(capture)
+      updateCaptures()
+      let newEval = narrowEvaluate(alpha, beta, depth-1)
+      unmakeMove(capture)
+      if (newEval <= alpha)
+        return alpha
+      if (newEval < beta)
+        beta = newEval
     }
-    return bestEval
+    return beta
   }
 }
 
@@ -707,17 +903,21 @@ function makeRealMove(move) {
 
 function unmakeRealMove() {
   unmakeMove(realMoves.pop())
+  unmakeMove(realMoves.pop())
   resetSquareClassRef()
   updateCellRef()
 }
 
 function makeAIMove() {
-  let time1 = Date.now()
-  const bestMove = findBestMove(3)
-  let time2 = Date.now()
-  let time = (time2 - time1) / 1000
+  let minMoveTime = 0.5
+  let time1ms = Date.now()
+  const bestMove = findBestMove(searchDepth)
+  let time2ms = Date.now()
+  let time = (time2ms - time1ms) / 1000
   console.log('Move search time: '+time+' seconds. Positions evaluated: '+evaluations)
-  makeRealMove(bestMove)
+  if (time < minMoveTime)
+    setTimeout(() => makeRealMove(bestMove), (minMoveTime-time)*1000)
+  else makeRealMove(bestMove)
 }
 
 function resetSquareClassRef() {
@@ -751,7 +951,7 @@ onMounted(() => {
     {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ (evaluation >= 0 ? '+' : '')+evaluation }}<br>
     {{ message }}
   </p>
-  <button v-if='realMoves.length' @click='unmakeRealMove'>Undo</button>
+  <button v-if='realMoves.length > 1' @click='unmakeRealMove'>Undo</button>
 </template>
 
 <style>
