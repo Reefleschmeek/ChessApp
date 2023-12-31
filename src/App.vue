@@ -119,7 +119,6 @@ function getOppositeColor(color) {
 }
 
 function resetBoardState() {
-  fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
   fenToBoard('3r2k1/p4p1p/1p6/5p2/1K6/3q4/8/8 w - - 0 0')
 }
 
