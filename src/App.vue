@@ -119,38 +119,48 @@ function getOppositeColor(color) {
 }
 
 function resetBoardState() {
-  for (let y=0;y<8;y++) {
-    for (let x=0;x<8;x++) {
-      let piece = ''
-      if (y == 0) {
-        if (x == 0 || x == 7) piece = 'BR'
-        if (x == 1 || x == 6) piece = 'BN'
-        if (x == 2 || x == 5) piece = 'BB'
-        if (x == 3) piece = 'BQ'
-        if (x == 4) piece = 'BK'
+  fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+}
+
+function fenToBoard(fen) {
+  const fields = fen.split(' ')
+
+  board.cells = Array.from(Array(8), () => Array(8).fill(''))
+  let x = 0, y = 0
+  for (let element of fields[0]) {
+    if (element == '/') {
+      y += 1
+      x = 0
+    } else if (parseInt(element)) {
+      x += parseInt(element)
+    } else {
+      if (element == element.toUpperCase()) {
+        board.cells[x][y] = 'W' + element
+        x += 1
+      } else {
+        board.cells[x][y] = 'B' + element.toUpperCase()
+        x += 1
       }
-      if (y == 1) piece = 'BP'
-      if (y == 6) piece = 'WP'
-      if (y == 7) {
-        if (x == 0 || x == 7) piece = 'WR'
-        if (x == 1 || x == 6) piece = 'WN'
-        if (x == 2 || x == 5) piece = 'WB'
-        if (x == 3) piece = 'WQ'
-        if (x == 4) piece = 'WK'
-      }
-      board.cells[x][y] = piece
     }
   }
-/*
-  board.cells[5][0] = 'BK'
-  board.cells[4][1] = 'BP'
-  board.cells[5][1] = 'BP'
-  board.cells[6][1] = 'BP'
-  board.cells[7][1] = 'BP'
-  board.cells[4][7] = 'WK'
-  board.cells[1][4] = 'WR'
-  */
+  board.playerToMove = fields[1].toUpperCase()
+  board.castleWKStack = [fields[2].includes('K')]
+  board.castleWQStack = [fields[2].includes('Q')]
+  board.castleBKStack = [fields[2].includes('k')]
+  board.castleBQStack = [fields[2].includes('q')]
+  if (fields[3] != '-') {
+    board.enPassantStack = [algebraicToCoords(fields[3])[0]]
+  } else {
+    board.enPassantStack = [null]
+  }
+  board.moveDrawStack = [parseInt(fields[4])]
   updateMoves(board)
+}
+
+function algebraicToCoords(square) {
+  let x = square.charCodeAt(0) - 97
+  let y = 8 - parseInt(square[1])
+  return [x, y]
 }
 
 function updateMoves() {
@@ -938,6 +948,7 @@ function makeAIMove() {
   let time2ms = Date.now()
   let time = (time2ms - time1ms) / 1000
   console.log('Move search time: '+time+' seconds. Positions evaluated: '+evaluations)
+  console.log('Eval: ' + (evaluation.value >= 0 ? '+' : '') + evaluation.value)
   if (time < minMoveTime)
     setTimeout(() => makeRealMove(bestMove), (minMoveTime-time)*1000)
   else makeRealMove(bestMove)
@@ -973,7 +984,7 @@ onMounted(() => {
     </div>
   </div>
   <p class='Center'>
-    {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ (evaluation >= 0 ? '+' : '')+evaluation }}<br>
+    {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move.<br>
     {{ message }}
   </p>
   <div class='Center'><button class='Center' v-if='realMoves.length > 1' @click='unmakeRealMove'>Undo Move</button></div>
