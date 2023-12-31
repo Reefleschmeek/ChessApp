@@ -8,10 +8,5 @@ export default defineConfig({
   base: '/ChessApp/',
   plugins: [
     vue(),
-  ],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    }
-  }
+  ]
 })
