@@ -22,6 +22,7 @@ const pieceImages = {
   'BQ': new URL('./assets/pieceBQ.png', import.meta.url),
   'BK': new URL('./assets/pieceBK.png', import.meta.url),
 }
+const pieceValues = {'P':100, 'N':320, 'B':330, 'R':500, 'Q':900, 'K':20000}
 const pawnTable = [
   [0, 50, 10, 5, 0, 5, 5, 0],
   [0, 50, 10, 5, 0, -5, 10, 0],
@@ -107,7 +108,7 @@ let highlightedMoves = {}
 let realMoves = []
 let evaluations = 0
 let searchDepth = 4
-let searchDepthNarrow = 4
+let searchDepthNarrow = 6
 
 function last(arr) {
   return arr[arr.length - 1]
@@ -140,6 +141,15 @@ function resetBoardState() {
       board.cells[x][y] = piece
     }
   }
+/*
+  board.cells[5][0] = 'BK'
+  board.cells[4][1] = 'BP'
+  board.cells[5][1] = 'BP'
+  board.cells[6][1] = 'BP'
+  board.cells[7][1] = 'BP'
+  board.cells[4][7] = 'WK'
+  board.cells[1][4] = 'WR'
+  */
   updateMoves(board)
 }
 
@@ -715,14 +725,13 @@ function unmakeMove(move) {
 function findBestMove(depth) {
   let alpha = -Infinity
   let beta = Infinity
+  evaluations = 0
   
-  board.moves.sort(() => (Math.random()-0.5))
   let bestMove = board.moves[0]
 
   if (board.playerToMove == 'W') {
     for (let move of board.moves) {
       makeMove(move)
-      updateMoves()
       let newEval = deepEvaluate(alpha, beta, depth-1)
       unmakeMove(move)
       if (newEval > alpha) {
@@ -734,7 +743,6 @@ function findBestMove(depth) {
   } else {
     for (let move of board.moves) {
       makeMove(move)
-      updateMoves()
       let newEval = deepEvaluate(alpha, beta, depth-1)
       unmakeMove(move)
       if (newEval < beta) {
@@ -748,70 +756,10 @@ function findBestMove(depth) {
 }
 
 function deepEvaluate(alpha, beta, depth) {
-  if (depth == 0 || !board.moves.length) {
-    updateCaptures()
+  if (depth == 0) {
     return narrowEvaluate(alpha, beta, searchDepthNarrow)
   }
-  if (board.playerToMove == 'W') {
-    for (let move of board.moves) {
-      makeMove(move)
-      updateMoves()
-      let newEval = deepEvaluate(alpha, beta, depth-1)
-      unmakeMove(move)
-      if (newEval >= beta)
-        return beta
-      if (newEval > alpha)
-        alpha = newEval
-    }
-    return alpha
-  } else {
-    for (let move of board.moves) {
-      makeMove(move)
-      updateMoves()
-      let newEval = deepEvaluate(alpha, beta, depth-1)
-      unmakeMove(move)
-      if (newEval <= alpha)
-        return alpha
-      if (newEval < beta)
-        beta = newEval
-    }
-    return beta
-  }
-}
-
-function narrowEvaluate(alpha, beta, depth) {
-  if (depth == 0 || !board.captures.length) {
-    return evaluate()
-  }
-  if (board.playerToMove == 'W') {
-    for (let capture of board.captures) {
-      makeMove(capture)
-      updateCaptures()
-      let newEval = narrowEvaluate(alpha, beta, depth-1)
-      unmakeMove(capture)
-      if (newEval >= beta)
-        return beta
-      if (newEval > alpha)
-        alpha = newEval
-    }
-    return alpha
-  } else {
-    for (let capture of board.captures) {
-      makeMove(capture)
-      updateCaptures()
-      let newEval = narrowEvaluate(alpha, beta, depth-1)
-      unmakeMove(capture)
-      if (newEval <= alpha)
-        return alpha
-      if (newEval < beta)
-        beta = newEval
-    }
-    return beta
-  }
-}
-
-function evaluate() {
-  evaluations++
+  updateMoves()
   if (!board.moves.length) {
     if (board.playerToMove == 'W' && isKingInCheck('W'))
       return -100
@@ -819,7 +767,81 @@ function evaluate() {
       return 100
     return 0
   }
-  const values = {'P':100, 'N':320, 'B':330, 'R':500, 'Q':900, 'K':20000}
+  if (board.playerToMove == 'W') {
+    let bestEval = -Infinity
+    for (let move of board.moves) {
+      makeMove(move)
+      let newEval = deepEvaluate(alpha, beta, depth-1)
+      unmakeMove(move)
+      bestEval = Math.max(bestEval, newEval)
+      alpha = Math.max(alpha, bestEval)
+      if (beta <= alpha)
+        break
+    }
+    return bestEval
+  } else {
+    let bestEval = Infinity
+    for (let move of board.moves) {
+      makeMove(move)
+      let newEval = deepEvaluate(alpha, beta, depth-1)
+      unmakeMove(move)
+      bestEval = Math.min(bestEval, newEval)
+      beta = Math.min(beta, bestEval)
+      if (beta <= alpha)
+        break
+    }
+    return bestEval
+  }
+}
+
+function narrowEvaluate(alpha, beta, depth) {
+  if (depth == 0) {
+    return evaluate()
+  }
+  updateCaptures()
+  board.captures.sort((a, b) => pieceValues[board.cells[b.xTo][b.yTo][1]] + pieceValues[board.cells[a.xFrom][a.yFrom][1]] - pieceValues[board.cells[a.xTo][a.yTo][1]] - pieceValues[board.cells[b.xFrom][b.yFrom][1]])
+  if (!board.captures.length) {
+    return evaluate()
+  }
+  if (board.playerToMove == 'W') {
+    let standPat = evaluate()
+    if (standPat >= beta)
+      return standPat
+    if (standPat > alpha)
+      alpha = standPat
+    let bestEval = -Infinity
+    for (let capture of board.captures) {
+      makeMove(capture)
+      let newEval = narrowEvaluate(alpha, beta, depth-1)
+      unmakeMove(capture)
+      bestEval = Math.max(bestEval, newEval)
+      alpha = Math.max(alpha, bestEval)
+      if (beta <= alpha)
+        break
+    }
+    return bestEval
+  } else {
+    let standPat = evaluate()
+    if (standPat <= alpha)
+      return standPat
+    if (standPat < beta)
+      beta = standPat
+    let bestEval = Infinity
+    for (let capture of board.captures) {
+      makeMove(capture)
+      let newEval = narrowEvaluate(alpha, beta, depth-1)
+      unmakeMove(capture)
+      bestEval = Math.min(bestEval, newEval)
+      beta = Math.min(beta, bestEval)
+      if (beta <= alpha)
+        break
+    }
+    return bestEval
+  }
+}
+
+function evaluate() {
+  evaluations++
   let evaluation = 0
   for (let y=0;y<8;y++) {
     for (let x=0;x<8;x++) {
@@ -827,11 +849,10 @@ function evaluate() {
         let color = board.cells[x][y][0]
         let type = board.cells[x][y][1]
         if (color == 'W') {
-          evaluation += values[type] + pieceTables[type][x][y]
+          evaluation += pieceValues[type] + pieceTables[type][x][y]
         } else {
-          evaluation -= values[type] + pieceTables[type][x][7-y]
+          evaluation -= pieceValues[type] + pieceTables[type][x][7-y]
         }
-        
       }
     }
   }
@@ -897,13 +918,15 @@ function makeRealMove(move) {
 
   //Let AI take turn
   if ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value)) {
-    setTimeout(makeAIMove, 1)
+    setTimeout(makeAIMove, 100)
   }
 }
 
 function unmakeRealMove() {
   unmakeMove(realMoves.pop())
   unmakeMove(realMoves.pop())
+  updateMoves()
+  updateCaptures()
   resetSquareClassRef()
   updateCellRef()
 }
@@ -944,17 +967,34 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class='Board' @click='resetSquareClassRef'>
-    <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click.stop='(e) => clickCell(e, index-1)'><img :src='pieceImages[cellRef[(index-1)%8][Math.floor((index-1)/8)]]'></div>
+  <div class='Center'>
+    <div class='Board' @click='resetSquareClassRef'>
+      <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click.stop='(e) => clickCell(e, index-1)'><img :src='pieceImages[cellRef[(index-1)%8][Math.floor((index-1)/8)]]'></div>
+    </div>
   </div>
-  <p>
+  <p class='Center'>
     {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move. Eval: {{ (evaluation >= 0 ? '+' : '')+evaluation }}<br>
     {{ message }}
   </p>
-  <button v-if='realMoves.length > 1' @click='unmakeRealMove'>Undo</button>
+  <div class='Center'><button class='Center' v-if='realMoves.length > 1' @click='unmakeRealMove'>Undo Move</button></div>
 </template>
 
 <style>
+
+* {
+  background-color: rgb(45, 59, 77);
+  color: white;
+}
+
+img {
+  background-color: transparent;
+}
+
+.Center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 
 .Board {
   display: grid;
