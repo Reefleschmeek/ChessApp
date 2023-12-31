@@ -962,6 +962,8 @@ function makeRealMove(move) {
   squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
   squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
   realMoves.push(move)
+  if (board.playerToMove == 'W')
+    console.log(boardToFen())
   
   //Check for game end conditions
   if (!board.moves.length) {
@@ -999,7 +1001,6 @@ function makeAIMove() {
   if (time < minMoveTime)
     setTimeout(() => makeRealMove(bestMove), (minMoveTime-time)*1000)
   else makeRealMove(bestMove)
-  console.log(boardToFen())
 }
 
 function resetSquareClassRef() {
