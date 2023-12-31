@@ -164,7 +164,7 @@ function boardToFen() {
     let emptyCounter = 0
     for (let x=0;x<8;x++) {
       if (board.cells[x][y]) {
-        if (emptyCounter > 0) {
+        if (emptyCounter) {
           fen += emptyCounter
           emptyCounter = 0
         }
@@ -175,6 +175,8 @@ function boardToFen() {
       }
       else emptyCounter++
     }
+    if (emptyCounter)
+      fen += emptyCounter
   }
   fen += (board.playerToMove == 'W') ? ' w' : ' b'
   let castleString = ' '
@@ -184,10 +186,11 @@ function boardToFen() {
   castleString += (last(board.castleBQStack)) ? 'q' : ''
   if (castleString == ' ')
     castleString += '-'
+  fen += castleString
   if (last(board.enPassantStack)) {
     let y = (board.playerToMove == 'W') ? 2 : 5
     let square = coordsToAlgebraic(last(board.enPassantStack), y)
-    fen += square
+    fen += ' ' + square
   }
   else fen += ' -'
   fen += ' ' + last(board.moveDrawStack)
@@ -959,7 +962,6 @@ function makeRealMove(move) {
   squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
   squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
   realMoves.push(move)
-  console.log(boardToFen())
   
   //Check for game end conditions
   if (!board.moves.length) {
@@ -997,6 +999,7 @@ function makeAIMove() {
   if (time < minMoveTime)
     setTimeout(() => makeRealMove(bestMove), (minMoveTime-time)*1000)
   else makeRealMove(bestMove)
+  console.log(boardToFen())
 }
 
 function resetSquareClassRef() {
