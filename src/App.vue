@@ -120,6 +120,7 @@ function getOppositeColor(color) {
 
 function resetBoardState() {
   fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+  fenToBoard('3r2k1/p4p1p/1p6/5p2/1K6/3q4/8/8 w - - 0 0')
 }
 
 function fenToBoard(fen) {
@@ -154,7 +155,6 @@ function fenToBoard(fen) {
     board.enPassantStack = [null]
   }
   board.moveDrawStack = [parseInt(fields[4])]
-  updateMoves(board)
 }
 
 function algebraicToCoords(square) {
@@ -550,7 +550,7 @@ function isKingInCheck(color) {
 }
 
 function isCellThreatened(x, y, byColor) {
-  if (byColor == 'B' && x > 1) {
+  if (byColor == 'B' && y > 1) {
     if ((x > 0 && board.cells[x-1][y-1] == 'BP') || (x < 7 && board.cells[x+1][y-1] == 'BP'))
       return true
   }
@@ -772,9 +772,9 @@ function deepEvaluate(alpha, beta, depth) {
   updateMoves()
   if (!board.moves.length) {
     if (board.playerToMove == 'W' && isKingInCheck('W'))
-      return -100
+      return -100 - depth
     if (board.playerToMove == 'B' && isKingInCheck('B'))
-      return 100
+      return 100 + depth
     return 0
   }
   if (board.playerToMove == 'W') {
@@ -871,7 +871,7 @@ function evaluate() {
 
 function clickCell(event, cellNum) {
 
-  if (!board.moves.length)
+  if (last(board.moveDrawStack) >= 100)
     return
 
   //Get grid coords of clicked cell
