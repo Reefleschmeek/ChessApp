@@ -156,10 +156,55 @@ function fenToBoard(fen) {
   board.moveDrawStack = [parseInt(fields[4])]
 }
 
+function boardToFen() {
+  let fen = ''
+  for (let y=0;y<8;y++) {
+    if (y != 0)
+      fen += '/'
+    let emptyCounter = 0
+    for (let x=0;x<8;x++) {
+      if (board.cells[x][y]) {
+        if (emptyCounter > 0) {
+          fen += emptyCounter
+          emptyCounter = 0
+        }
+        let piece = board.cells[x][y]
+        if (piece[0] == 'W')
+          fen += piece[1]
+        else fen += piece[1].toLowerCase()
+      }
+      else emptyCounter++
+    }
+  }
+  fen += (board.playerToMove == 'W') ? ' w' : ' b'
+  let castleString = ' '
+  castleString += (last(board.castleWKStack)) ? 'K' : ''
+  castleString += (last(board.castleWQStack)) ? 'Q' : ''
+  castleString += (last(board.castleBKStack)) ? 'k' : ''
+  castleString += (last(board.castleBQStack)) ? 'q' : ''
+  if (castleString == ' ')
+    castleString += '-'
+  if (last(board.enPassantStack)) {
+    let y = (board.playerToMove == 'W') ? 2 : 5
+    let square = coordsToAlgebraic(last(board.enPassantStack), y)
+    fen += square
+  }
+  else fen += ' -'
+  fen += ' ' + last(board.moveDrawStack)
+  fen += ' 1'
+  return fen
+}
+
 function algebraicToCoords(square) {
   let x = square.charCodeAt(0) - 97
   let y = 8 - parseInt(square[1])
   return [x, y]
+}
+
+function coordsToAlgebraic(x, y) {
+  let f = String.fromCharCode(x + 97)
+  let r = 8 - y
+  return f + r
 }
 
 function updateMoves() {
@@ -914,6 +959,7 @@ function makeRealMove(move) {
   squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
   squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
   realMoves.push(move)
+  console.log(boardToFen())
   
   //Check for game end conditions
   if (!board.moves.length) {
