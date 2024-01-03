@@ -1,13 +1,24 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 
 const squareClassRef = ref(Array.from(Array(8), () => Array(8).fill('')))
 const cellRef = ref(Array.from(Array(8), () => Array(8).fill('')))
+const fen = ref('')
 const evaluation = ref(0)
-const message = ref('')
+const moveMessage = ref('')
+const stateMessage = ref('')
+const fenMessage = ref('')
 const whiteAI = ref(false)
 const blackAI = ref(true)
 
+const pieceNames = {
+  'P': 'pawn',
+  'N': 'knight',
+  'B': 'bishop',
+  'R': 'rook',
+  'Q': 'queen',
+  'K': 'king',
+}
 const pieceImages = {
   'WP': new URL('./assets/pieceWP.png', import.meta.url),
   'WN': new URL('./assets/pieceWN.png', import.meta.url),
@@ -108,7 +119,8 @@ let highlightedMoves = {}
 let realMoves = []
 let evaluations = 0
 let searchDepth = 4
-let searchDepthNarrow = 6
+let searchDepthNarrow = 99
+let difficulty = 10
 
 function last(arr) {
   return arr[arr.length - 1]
@@ -119,11 +131,12 @@ function getOppositeColor(color) {
 }
 
 function resetBoardState() {
-  fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
+  fen.value = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+  fenToBoard()
 }
 
-function fenToBoard(fen) {
-  const fields = fen.split(' ')
+function fenToBoard() {
+  const fields = fen.value.split(' ')
 
   board.cells = Array.from(Array(8), () => Array(8).fill(''))
   let x = 0, y = 0
@@ -144,41 +157,43 @@ function fenToBoard(fen) {
     }
   }
   board.playerToMove = fields[1].toUpperCase()
-  board.castleWKStack = [fields[2].includes('K')]
-  board.castleWQStack = [fields[2].includes('Q')]
-  board.castleBKStack = [fields[2].includes('k')]
-  board.castleBQStack = [fields[2].includes('q')]
+  board.castleWKStack = [fields[2].includes('K') && board.cells[4][7] == 'WK' && board.cells[7][7] == 'WR']
+  board.castleWQStack = [fields[2].includes('Q') && board.cells[4][7] == 'WK' && board.cells[0][7] == 'WR']
+  board.castleBKStack = [fields[2].includes('k') && board.cells[4][0] == 'BK' && board.cells[7][0] == 'BR']
+  board.castleBQStack = [fields[2].includes('q') && board.cells[4][0] == 'BK' && board.cells[0][0] == 'BR']
   if (fields[3] != '-') {
     board.enPassantStack = [algebraicToCoords(fields[3])[0]]
   } else {
     board.enPassantStack = [null]
   }
   board.moveDrawStack = [parseInt(fields[4])]
+  realMoves = []
+  refreshBoard()
 }
 
 function boardToFen() {
-  let fen = ''
+  fen.value = ''
   for (let y=0;y<8;y++) {
     if (y != 0)
-      fen += '/'
+      fen.value += '/'
     let emptyCounter = 0
     for (let x=0;x<8;x++) {
       if (board.cells[x][y]) {
         if (emptyCounter) {
-          fen += emptyCounter
+          fen.value += emptyCounter
           emptyCounter = 0
         }
         let piece = board.cells[x][y]
         if (piece[0] == 'W')
-          fen += piece[1]
-        else fen += piece[1].toLowerCase()
+          fen.value += piece[1]
+        else fen.value += piece[1].toLowerCase()
       }
       else emptyCounter++
     }
     if (emptyCounter)
-      fen += emptyCounter
+      fen.value += emptyCounter
   }
-  fen += (board.playerToMove == 'W') ? ' w' : ' b'
+  fen.value += (board.playerToMove == 'W') ? ' w' : ' b'
   let castleString = ' '
   castleString += (last(board.castleWKStack)) ? 'K' : ''
   castleString += (last(board.castleWQStack)) ? 'Q' : ''
@@ -186,16 +201,15 @@ function boardToFen() {
   castleString += (last(board.castleBQStack)) ? 'q' : ''
   if (castleString == ' ')
     castleString += '-'
-  fen += castleString
+  fen.value += castleString
   if (last(board.enPassantStack)) {
     let y = (board.playerToMove == 'W') ? 2 : 5
     let square = coordsToAlgebraic(last(board.enPassantStack), y)
-    fen += ' ' + square
+    fen.value += ' ' + square
   }
-  else fen += ' -'
-  fen += ' ' + last(board.moveDrawStack)
-  fen += ' 1'
-  return fen
+  else fen.value += ' -'
+  fen.value += ' ' + last(board.moveDrawStack)
+  fen.value += ' 1'
 }
 
 function algebraicToCoords(square) {
@@ -225,6 +239,7 @@ function updateMoves() {
       }
     }
   }
+  moves.sort((a, b) => b.estValue - a.estValue)
   board.moves = moves
 }
 
@@ -243,6 +258,7 @@ function updateCaptures() {
       }
     }
   }
+  captures.sort((a, b) => b.estValue - a.estValue)
   board.captures = captures
 }
 
@@ -425,9 +441,12 @@ function getMovesFromPiece(x, y) {
   //Apply capture flags
   const verifiedMoves = []
   for (let halfMove of halfMoves) {
-    if (board.cells[halfMove.xTo][halfMove.yTo])
-      halfMove.flags.push('X' + board.cells[halfMove.xTo][halfMove.yTo][1])
     let move = {xFrom:x, yFrom:y, ...halfMove}
+    move.estValue = 0
+    if (board.cells[move.xTo][move.yTo]) {
+      move.flags.push('X' + board.cells[move.xTo][move.yTo][1])
+      move.estValue = 10*pieceValues[board.cells[move.xTo][move.yTo][1]]-pieceValues[type]
+    }
     makeMove(move)
     if (!isKingInCheck(color)) {
       verifiedMoves.push(move)
@@ -573,9 +592,10 @@ function getCapturesFromPiece(x, y) {
   //Apply capture flags
   const verifiedCaptures = []
   for (let halfMove of halfMoves) {
-    if (!halfMove.flags.includes('EP'))
-      halfMove.flags.push('X' + board.cells[halfMove.xTo][halfMove.yTo][1])
     let move = {xFrom:x, yFrom:y, ...halfMove}
+    if (!move.flags.includes('EP'))
+      move.flags.push('X' + board.cells[move.xTo][move.yTo][1])
+    move.estValue = 10*pieceValues[board.cells[move.xTo][move.yTo][1]]-pieceValues[type]
     makeMove(move)
     if (!isKingInCheck(color)) {
       verifiedCaptures.push(move)
@@ -856,7 +876,7 @@ function narrowEvaluate(alpha, beta, depth) {
     return evaluate()
   }
   updateCaptures()
-  board.captures.sort((a, b) => pieceValues[board.cells[b.xTo][b.yTo][1]] + pieceValues[board.cells[a.xFrom][a.yFrom][1]] - pieceValues[board.cells[a.xTo][a.yTo][1]] - pieceValues[board.cells[b.xFrom][b.yFrom][1]])
+  //board.captures.sort((a, b) => pieceValues[board.cells[b.xTo][b.yTo][1]] + pieceValues[board.cells[a.xFrom][a.yFrom][1]] - pieceValues[board.cells[a.xTo][a.yTo][1]] - pieceValues[board.cells[b.xFrom][b.yFrom][1]])
   if (!board.captures.length) {
     return evaluate()
   }
@@ -913,7 +933,7 @@ function evaluate() {
       }
     }
   }
-  return evaluation / 100
+  return evaluation / 100// + (10 - difficulty) * (2 * Math.random() - 1)
 }
 
 function clickCell(event, cellNum) {
@@ -955,39 +975,22 @@ function clickCell(event, cellNum) {
 function makeRealMove(move) {
   //Apply move to board
   makeMove(move)
-  updateMoves()
-  resetSquareClassRef()
-  updateCellRef()
-  pieceHighlight = null
+  realMoves.push(move)
+  refreshBoard()
   squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
   squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
-  realMoves.push(move)
-  if (board.playerToMove == 'W')
-    console.log(boardToFen())
-  
-  //Check for game end conditions
-  if (!board.moves.length) {
-    if (isKingInCheck(board.playerToMove)) {
-    message.value = 'Checkmate! '+((board.playerToMove == 'W') ? 'Black' : 'White')+' wins!'
-    } else {
-      message.value = 'Stalemate! Game ends in a draw.'
-    }
-    return
-  }
 
   //Let AI take turn
-  if ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value)) {
+  if (board.moves.length && ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value))) {
     setTimeout(makeAIMove, 100)
   }
 }
 
 function unmakeRealMove() {
   unmakeMove(realMoves.pop())
-  unmakeMove(realMoves.pop())
-  updateMoves()
-  updateCaptures()
-  resetSquareClassRef()
-  updateCellRef()
+  if ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value))
+    unmakeMove(realMoves.pop())
+  refreshBoard()
 }
 
 function makeAIMove() {
@@ -1003,6 +1006,45 @@ function makeAIMove() {
   else makeRealMove(bestMove)
 }
 
+function refreshBoard() {
+  updateMoves()
+  resetSquareClassRef()
+  updateCellRef()
+  boardToFen()
+  pieceHighlight = null
+
+  //Update move message
+  moveMessage.value = ''
+  if (realMoves.length) {
+    let move = last(realMoves)
+    for (let flag of move.flags) {
+      if (flag[0] == 'X')
+        moveMessage.value = ((board.playerToMove == 'W') ? 'Black ' : 'White ') + pieceNames[board.cells[move.xTo][move.yTo][1]] + ' captures ' + pieceNames[flag[1]] + ' on ' + coordsToAlgebraic(move.xTo, move.yTo) + '.'
+    }
+    if (move.flags.includes('EP'))
+      moveMessage.value = ((board.playerToMove == 'W') ? 'Black' : 'White') + ' pawn captures en passant on ' + coordsToAlgebraic(move.xTo, move.yTo) + '.'
+    if (move.flags.includes('PQ'))
+      moveMessage.value = ((board.playerToMove == 'W') ? 'Black' : 'White') + ' moves pawn to ' + coordsToAlgebraic(move.xTo, move.yTo) + ' and promotes to queen.'
+    if (move.flags.includes('CK'))
+      moveMessage.value = ((board.playerToMove == 'W') ? 'Black' : 'White') + ' castles king side.'
+    if (move.flags.includes('CQ'))
+      moveMessage.value = ((board.playerToMove == 'W') ? 'Black' : 'White') + ' castles queen side.'
+    if (!moveMessage.value)
+      moveMessage.value = ((board.playerToMove == 'W') ? 'Black' : 'White') + ' moves ' + pieceNames[board.cells[move.xTo][move.yTo][1]] + ' to ' + coordsToAlgebraic(move.xTo, move.yTo) + '.'
+  }
+  
+  //Update game state message
+  if (!board.moves.length) {
+    if (isKingInCheck(board.playerToMove)) {
+    stateMessage.value = 'Checkmate! '+((board.playerToMove == 'W') ? 'Black' : 'White')+' wins!'
+    } else {
+      stateMessage.value = 'Stalemate! Game ends in a draw.'
+    }
+  } else {
+    stateMessage.value = (board.playerToMove=='W' ? 'White' : 'Black') + ' to move.'
+  }
+}
+
 function resetSquareClassRef() {
   for (let y=0;y<8;y++) {
     for (let x=0;x<8;x++) {
@@ -1013,6 +1055,25 @@ function resetSquareClassRef() {
 
 function updateCellRef() {
   cellRef.value = structuredClone(board.cells)
+}
+
+function copyFen() {
+  navigator.clipboard.writeText(fen.value)
+  fenMessage.value = 'Copied!'
+  setTimeout(() => fenMessage.value = '', 2000)
+}
+
+function setFen() {
+  try {
+    fenMessage.value = 'Successfully loaded FEN.'
+    setTimeout(() => fenMessage.value = '', 2000)
+    fenToBoard()
+  }
+  catch(err) {
+    fenMessage.value = 'Invalid FEN!'
+    setTimeout(() => fenMessage.value = '', 2000)
+    resetBoardState()
+  }
 }
 
 onMounted(() => {
@@ -1032,11 +1093,14 @@ onMounted(() => {
       <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click.stop='(e) => clickCell(e, index-1)'><img :src='pieceImages[cellRef[(index-1)%8][Math.floor((index-1)/8)]]'></div>
     </div>
   </div>
-  <p class='Center'>
-    {{ board.playerToMove=='W' ? 'White' : 'Black' }} to move.<br>
-    {{ message }}
-  </p>
-  <div class='Center'><button class='Center' v-if='realMoves.length > 1' @click='unmakeRealMove'>Undo Move</button></div>
+  <h4 class='Center' v-if='moveMessage'>{{ moveMessage }}</h4>
+  <h4 class='Center'>{{ stateMessage }}</h4>
+  <div class='Center'><button v-if='realMoves.length > 1' @click='unmakeRealMove' style='width: 90px; margin-right: 20px;'>Undo Move</button><button @click='resetBoardState' style='width: 90px;'>Reset Board</button></div>
+  <div class='Center'></div>
+  <div class='Center' style='margin-top: 20px;'>Current FEN:</div>
+  <div class='Center'><input style='width: 200px; margin-top: 10px; margin-bottom: 20px;' v-model='fen'></div>
+  <div class='Center'><button @click='copyFen' style='width: 80px; margin-right: 20px;'>Copy FEN</button><button @click='setFen' style='width: 80px;'>Set FEN</button></div>
+  <p class='Center' v-if='fenMessage' style='color: red'>{{ fenMessage }}</p>
 </template>
 
 <style>
