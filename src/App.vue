@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 
+
 const squareClassRef = ref(Array.from(Array(8), () => Array(8).fill('')))
 const cellRef = ref(Array.from(Array(8), () => Array(8).fill('')))
 const fen = ref('')
@@ -8,8 +9,8 @@ const evaluation = ref(0)
 const moveMessage = ref('')
 const stateMessage = ref('')
 const fenMessage = ref('')
-const whiteAI = ref(false)
-const blackAI = ref(true)
+const whiteAI = ref('false')
+const blackAI = ref('true')
 
 const pieceNames = {
   'P': 'pawn',
@@ -121,6 +122,7 @@ let evaluations = 0
 let searchDepth = 4
 let searchDepthNarrow = 99
 let difficulty = 10
+let currentPuzzle = null
 
 function last(arr) {
   return arr[arr.length - 1]
@@ -131,6 +133,7 @@ function getOppositeColor(color) {
 }
 
 function resetBoardState() {
+  currentPuzzle = null
   fen.value = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
   fenToBoard()
 }
@@ -169,6 +172,7 @@ function fenToBoard() {
   board.moveDrawStack = [parseInt(fields[4])]
   realMoves = []
   refreshBoard()
+  checkForAIMove()
 }
 
 function boardToFen() {
@@ -936,7 +940,7 @@ function evaluate() {
   return evaluation / 100// + (10 - difficulty) * (2 * Math.random() - 1)
 }
 
-function clickCell(event, cellNum) {
+function clickCell(cellNum) {
 
   if (last(board.moveDrawStack) >= 100)
     return
@@ -979,18 +983,53 @@ function makeRealMove(move) {
   refreshBoard()
   squareClassRef.value[move.xFrom][move.yFrom] = 'HighlightSquare'
   squareClassRef.value[move.xTo][move.yTo] = 'HighlightSquare'
-
-  //Let AI take turn
-  if (board.moves.length && ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value))) {
-    setTimeout(makeAIMove, 100)
-  }
+  checkForAIMove()
 }
 
 function unmakeRealMove() {
   unmakeMove(realMoves.pop())
-  if ((board.playerToMove == 'B' && blackAI.value) || (board.playerToMove == 'W' && whiteAI.value))
+  if ((board.playerToMove == 'B' && blackAI.value == 'true') || (board.playerToMove == 'W' && whiteAI.value == 'true'))
     unmakeMove(realMoves.pop())
   refreshBoard()
+}
+
+function UCIToMove(uci) {
+  let algebraicFrom = uci.substring(0, 2)
+  let algrbracTo = uci.substring(2, 4)
+  let coordsFrom = algebraicToCoords(algebraicFrom)
+  let coordsTo = algebraicToCoords(algrbracTo)
+  let move = {xFrom: coordsFrom[0], yFrom: coordsFrom[1], xTo: coordsTo[0], yTo: coordsTo[1], flags: []}
+  if (move.xFrom == 4 && move.xTo == 6 && board.cells[move.xFrom][move.yFrom] == 'WK')
+    move.flags.push('CK')
+  if (move.xFrom == 4 && move.xTo == 2 && board.cells[move.xFrom][move.yFrom] == 'WK')
+    move.flags.push('CQ')
+  if (move.xFrom == 4 && move.xTo == 6 && board.cells[move.xFrom][move.yFrom] == 'BK')
+    move.flags.push('CK')
+  if (move.xFrom == 4 && move.xTo == 2 && board.cells[move.xFrom][move.yFrom] == 'BK')
+    move.flags.push('CQ')
+  if (move.yFrom == 6 && move.yTo == 4 && board.cells[move.xFrom][move.yFrom] == 'WP')
+    move.flags.push('DP')
+  if (move.yFrom == 1 && move.yTo == 3 && board.cells[move.xFrom][move.yFrom] == 'BP')
+    move.flags.push('DP')
+  if (move.xFrom != move.xTo && board.cells[move.xFrom][move.yFrom][1] == 'P' && !board.cells[move.xTo][move.yTo])
+    move.flags.push('EP')
+  if (move.yTo == 0 && board.cells[move.xFrom][move.yFrom] == 'WP')
+    move.flags.push('PQ')
+  if (move.yTo == 7 && board.cells[move.xFrom][move.yFrom] == 'BP')
+    move.flags.push('PQ')
+  if (board.cells[move.xTo][move.yTo])
+    move.flags.push('X' + board.cells[move.xTo][move.yTo][1])
+  return move
+}
+
+function delayedCheckForAIMove() {
+  setTimeout(checkForAIMove, 10)
+}
+
+function checkForAIMove() {
+  if (board.moves.length && ((board.playerToMove == 'B' && blackAI.value == 'true') || (board.playerToMove == 'W' && whiteAI.value == 'true')) ) {
+    setTimeout(makeAIMove, 10)
+  }
 }
 
 function makeAIMove() {
@@ -1076,11 +1115,57 @@ function setFen() {
   }
 }
 
+function newPuzzle() {
+  getPuzzleFromJSON().then(function(puzzle) {
+    console.log(puzzle)
+    currentPuzzle = puzzle
+    resetPuzzle()
+  })
+}
+
+function resetPuzzle() {
+  whiteAI.value = false
+  blackAI.value = false
+  fen.value = currentPuzzle.fen
+  fenToBoard()
+  setTimeout(makeFirstPuzzleMove, 1000)
+}
+
+function makeFirstPuzzleMove() {
+  whiteAI.value = (board.playerToMove == 'W') ? 'true' : 'false'
+  blackAI.value = (board.playerToMove == 'B') ? 'true' : 'false'
+  makeRealMove(UCIToMove(currentPuzzle.moves[0]))
+}
+
+async function getPuzzleFromAPI() {
+  const url = 'https://chess-puzzles.p.rapidapi.com/?themes=%5B%22mate%22%5D'
+  const options = {
+    method: 'GET',
+    headers: {
+      'X-RapidAPI-Key': '946c8d8940msheaf7297f7b3b9aap147583jsn4cf586f90ee9',
+      'X-RapidAPI-Host': 'chess-puzzles.p.rapidapi.com'
+    }
+  }
+  try {
+    const response = await fetch(url, options)
+    const data = await response.json()
+    return data.puzzles[0]
+  } catch (error) {
+    console.error(error)
+  }
+}
+
+async function getPuzzleFromJSON() {
+  const response = await fetch('./mate-puzzles.json')
+  const data = await response.json()
+  const puzzle = data.puzzles[Math.floor(data.puzzles.length * Math.random())]
+  return puzzle
+}
+
 onMounted(() => {
   resetBoardState()
-  resetSquareClassRef()
-  updateCellRef()
-  if (whiteAI.value) {
+  refreshBoard()
+  if (whiteAI.value == 'true') {
     makeAIMove()
   }
 })
@@ -1088,18 +1173,38 @@ onMounted(() => {
 </script>
 
 <template>
+  <div class='Center' style='margin-bottom: 20px;'><h1>Okay Chess</h1></div>
   <div class='Center'>
     <div class='Board' @click='resetSquareClassRef'>
-      <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click.stop='(e) => clickCell(e, index-1)'><img :src='pieceImages[cellRef[(index-1)%8][Math.floor((index-1)/8)]]'></div>
+      <div v-for='index in 64' :class='squareClassRef[(index-1)%8][Math.floor((index-1)/8)]' :key='index-1' @click.stop='(e) => clickCell(index-1)'><img :src='pieceImages[cellRef[(index-1)%8][Math.floor((index-1)/8)]]'></div>
     </div>
   </div>
   <h4 class='Center' v-if='moveMessage'>{{ moveMessage }}</h4>
   <h4 class='Center'>{{ stateMessage }}</h4>
-  <div class='Center'><button v-if='realMoves.length > 1' @click='unmakeRealMove' style='width: 90px; margin-right: 20px;'>Undo Move</button><button @click='resetBoardState' style='width: 90px;'>Reset Board</button></div>
-  <div class='Center'></div>
+  <div class='Center'>
+    <button v-if='realMoves.length && currentPuzzle == null' @click='unmakeRealMove' style='width: 90px; margin-right: 20px; margin-bottom: 20px;'>Undo Move</button>
+    <button @click='resetBoardState' style='width: 90px; margin-bottom: 20px;'>Reset Board</button>
+  </div>
+  <div class='Center'>
+    <button @click='newPuzzle' style='width: 90px; margin-bottom: 20px;'>New Puzzle</button>
+    <button v-if='realMoves.length && currentPuzzle != null' @click='resetPuzzle' style='width: 90px; margin-left: 20px; margin-bottom: 20px;'>Reset Puzzle</button>
+  </div>
+  <div class='Center'>
+    White CPU:
+    <input type='radio' id='wtrue' value='true' v-model='whiteAI' @click='delayedCheckForAIMove'><label for='wtrue'>Yes</label>
+    <input type='radio' id='wfalse' value='false' v-model='whiteAI' @click='delayedCheckForAIMove'><label for='wfalse'>No</label>
+  </div>
+  <div class='Center'>
+    Black CPU:
+    <input type='radio' id='btrue' value='true' v-model='blackAI' @click='delayedCheckForAIMove'><label for='btrue'>Yes</label>
+    <input type='radio' id='bfalse' value='false' v-model='blackAI' @click='delayedCheckForAIMove'><label for='bfalse'>No</label>
+  </div>
   <div class='Center' style='margin-top: 20px;'>Current FEN:</div>
   <div class='Center'><input style='width: 200px; margin-top: 10px; margin-bottom: 20px;' v-model='fen'></div>
-  <div class='Center'><button @click='copyFen' style='width: 80px; margin-right: 20px;'>Copy FEN</button><button @click='setFen' style='width: 80px;'>Set FEN</button></div>
+  <div class='Center'>
+    <button @click='copyFen' style='width: 80px; margin-right: 20px;'>Copy FEN</button>
+    <button @click='setFen' style='width: 80px;'>Set FEN</button>
+  </div>
   <p class='Center' v-if='fenMessage' style='color: red'>{{ fenMessage }}</p>
 </template>
 
@@ -1112,6 +1217,14 @@ onMounted(() => {
 
 img {
   background-color: transparent;
+}
+
+button {
+  background-color: rgb(61, 61, 61);
+}
+
+input {
+  background-color: rgb(61, 61, 61);
 }
 
 .Center {
